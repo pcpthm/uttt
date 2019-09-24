@@ -1,8 +1,9 @@
 use derive_more::{BitAnd, BitAndAssign, BitOr, Not};
 use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, Default, BitAnd, BitOr, BitAndAssign, Not, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, BitAnd, BitOr, BitAndAssign, Not, PartialEq, Eq, Hash)]
 pub struct Mask81(u128);
 
 impl Mask81 {
@@ -16,7 +17,7 @@ impl Mask81 {
 
 const FIELD_ALL: u16 = (1u16 << 9) - 1;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct State {
     player_placed: Mask81,
     opponent_placed: Mask81,
@@ -24,6 +25,39 @@ pub struct State {
     available_fields: Mask81,
     meta_player_placed: u16,
     meta_opponent_placed: u16,
+}
+
+fn symmetry_perm(sym: u8, i: usize) -> usize {
+    let mut y = i / 3;
+    let mut x = i % 3;
+    if sym & 1 != 0 {
+        y = 2 - y;
+    }
+    if sym & 2 != 0 {
+        x = 2 - x;
+    }
+    if sym & 4 != 0 {
+        std::mem::swap(&mut y, &mut x);
+    }
+    y * 3 + x
+}
+
+fn symmetry_perm2(sym: u8, i: usize) -> usize {
+    symmetry_perm(sym, i / 9) * 9 + symmetry_perm(sym, i % 9)
+}
+
+fn symmetry_perm_field(sym: u8, field: u16) -> u16 {
+    (0..9)
+        .map(|i| (field >> symmetry_perm(sym, i) & 1) << i)
+        .sum()
+}
+
+fn symmetry_perm_mask(sym: u8, mask: Mask81) -> Mask81 {
+    Mask81(
+        (0..81)
+            .map(|i| (mask.0 >> symmetry_perm2(sym, i) & 1) << i)
+            .sum(),
+    )
 }
 
 impl State {
@@ -35,6 +69,36 @@ impl State {
             available_fields: Mask81::ALL,
             meta_player_placed: 0,
             meta_opponent_placed: 0,
+        }
+    }
+
+    // note: slow
+    pub fn minimize_by_symmetry(&self) -> State {
+        let mut board = [0u8; 81];
+        board.iter_mut().enumerate().for_each(|(i, r)| {
+            *r = ((self.player_placed.0 >> i & 1) as u8) << 2
+                | ((self.opponent_placed.0 >> i & 1) as u8) << 1
+                | ((self.next_valid.0 >> i & 1) as u8)
+        });
+        let mut min_board = [0xffu8; 81];
+        let mut min_sym = 0;
+        for sym in 0..8 {
+            let mut permuted = [0u8; 81];
+            for i in 0..81 {
+                permuted[i] = board[symmetry_perm2(sym, i)];
+            }
+            if &permuted[..] < &min_board[..] {
+                min_board = permuted;
+                min_sym = sym;
+            }
+        }
+        State {
+            player_placed: symmetry_perm_mask(min_sym, self.player_placed),
+            opponent_placed: symmetry_perm_mask(min_sym, self.opponent_placed),
+            next_valid: symmetry_perm_mask(min_sym, self.next_valid),
+            available_fields: symmetry_perm_mask(min_sym, self.available_fields),
+            meta_player_placed: symmetry_perm_field(min_sym, self.meta_player_placed),
+            meta_opponent_placed: symmetry_perm_field(min_sym, self.meta_opponent_placed),
         }
     }
 }
@@ -131,8 +195,8 @@ impl MoveCounter {
         }
     }
 
-    fn recurse(&self, state: State, depth: u32) -> u64 {
-        debug_assert!(depth > 0);
+    fn recurse(&self, state: State, depth: u32, max_depth: u32) -> u64 {
+        debug_assert!(depth < max_depth);
         debug_assert!((state.player_placed & state.opponent_placed) == Mask81::default());
         debug_assert!(
             (state.next_valid
@@ -150,53 +214,35 @@ impl MoveCounter {
         }));
 
         let mut total = state.next_valid.count_ones().into();
-        if depth >= 7 {
-            let mut next_states = Vec::new();
-            self.for_each_next_states(state, |next_state| {
-                next_states.push(next_state);
-            });
-            total += next_states
-                .into_par_iter()
-                .map(|next_state| self.recurse(next_state, depth - 1))
-                .sum::<u64>();
-        } else if depth == 1 {
+        if max_depth - depth == 1 {
             self.for_each_next_states(state, |next_state| {
                 total += next_state.next_valid.count_ones() as u64;
             });
+        } else if max_depth - depth >= 7 {
+            let mut next_states: HashMap<State, u64> = HashMap::new();
+            self.for_each_next_states(state, |next_state| {
+                *next_states
+                    .entry(next_state.minimize_by_symmetry())
+                    .or_default() += 1;
+            });
+            total += next_states
+                .into_par_iter()
+                .map(|(next_state, mul)| mul * self.recurse(next_state, depth + 1, max_depth))
+                .sum::<u64>();
         } else {
             self.for_each_next_states(state, |next_state| {
-                total += self.recurse(next_state, depth - 1);
+                total += self.recurse(next_state, depth + 1, max_depth);
             });
         };
 
         total
     }
 
-    pub fn count_moves(&self, depth: u32) -> u64 {
-        if depth == 0 {
+    pub fn count_moves(&self, max_depth: u32) -> u64 {
+        if max_depth == 0 {
             0
         } else {
-            // Take account of the symmetry for the first move
-            let mut initial_states = Vec::with_capacity(9 * 3);
-            let mut index = 0;
-            self.for_each_next_states(State::initial(), |next_state| {
-                if index < 9 * 2 {
-                    initial_states.push((next_state, 4));
-                } else if 9 * 4 <= index && index < 9 * 5 {
-                    initial_states.push((next_state, 1));
-                }
-                index += 1;
-            });
-            initial_states
-                .into_par_iter()
-                .map(|(state, mul)| {
-                    mul * (1 + if depth == 1 {
-                        state.next_valid.count_ones() as u64
-                    } else {
-                        self.recurse(state, depth - 1)
-                    })
-                })
-                .sum()
+            self.recurse(State::initial(), 0, max_depth)
         }
     }
 }

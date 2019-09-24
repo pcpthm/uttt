@@ -21,7 +21,7 @@ I made that last (depth = 0) moves can be counted just by the popcount instructi
 
 <https://github.com/pcpthm/uttt/tree/more>
 
-* Symmetry is only used for the first move. It seems like second or later moves don't have apparent symmetry in most cases (because field is specified).
+* Symmetry is used for first few moves.
 * Embarrassingly-parallel.
 
 ## Result on my machine (4 physical cores, 8 logical cores)
@@ -35,12 +35,14 @@ depth = 3
 result = 62217, time = 0ms
 depth = 4
 result = 535473, time = 0ms
+depth = 5
+result = 4556433, time = 5ms
 depth = 6
-result = 38338977, time = 3ms
+result = 38338977, time = 43ms
 depth = 7
-result = 319406385, time = 32ms
+result = 319406385, time = 17ms
 depth = 8
-result = 2636425377, time = 235ms
+result = 2636425377, time = 104ms
 depth = 9
-result = 21620184705, time = 1906ms
+result = 21620184705, time = 777ms
 ```
