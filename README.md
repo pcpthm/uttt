@@ -11,12 +11,18 @@ I made that last (depth = 0) moves can be counted just by the popcount instructi
 
 ## More optimization oppotunities
 
-* Exploit symmetries. Note: the symmetry seems only 2^3 (horizontal/vertical/transpose). Permutating the meta-board should also flip all small-boards due to the field specifying rule.
 * More efficient representation than using consective 81 bits on an `u128`. For example, I used 32-bit-aligned bits for each 9x3 stack to sped up my sudoku solver <https://github.com/pcpthm/sudoku> (warning: overly optimized and not readable).
 * Faster counting of recursion leaves (depth=1), somehow.
 * Memorization
 * Because depth is so small, we actually don't need to keep meta game information. i.e. Game won't end with such a small depth.
 * Micro optimizations such as using `get_unchecked`.
+
+## Branch: Parallel & symmetry exploit version
+
+<https://github.com/pcpthm/uttt/tree/more>
+
+* Symmetry is only used for the first move. It seems like second or later moves don't have apparent symmetry in most cases (because field is specified).
+* Embarrassingly-parallel.
 
 ## Result on my machine
 
@@ -40,7 +46,3 @@ result = 2636425377, time = 2847ms
 depth = 9
 result = 21620184705, time = 24129ms
 ```
-
-## Parallelization
-
-See <https://github.com/pcpthm/uttt/tree/parallel> for the parallelization using `rayon`. Roughly 4x improvement on my machine (4 physical cores, 8 logical cores).
