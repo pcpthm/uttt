@@ -38,11 +38,13 @@ result = 535473, time = 0ms
 depth = 5
 result = 4556433, time = 5ms
 depth = 6
-result = 38338977, time = 43ms
+result = 38338977, time = 42ms
 depth = 7
-result = 319406385, time = 17ms
+result = 319406385, time = 16ms
 depth = 8
-result = 2636425377, time = 104ms
+result = 2636425377, time = 100ms
 depth = 9
-result = 21620184705, time = 777ms
+result = 21620184705, time = 753ms
+depth = 10
+result = 176498814001, time = 5960ms
 ```

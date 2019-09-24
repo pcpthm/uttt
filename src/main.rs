@@ -195,8 +195,7 @@ impl MoveCounter {
         }
     }
 
-    fn recurse(&self, state: State, depth: u32, max_depth: u32) -> u64 {
-        debug_assert!(depth < max_depth);
+    fn recurse_count(&self, state: State, remaining_moves: u32) -> u64 {
         debug_assert!((state.player_placed & state.opponent_placed) == Mask81::default());
         debug_assert!(
             (state.next_valid
@@ -214,43 +213,71 @@ impl MoveCounter {
         }));
 
         let mut total = state.next_valid.count_ones().into();
-        if max_depth - depth == 1 {
+        if remaining_moves == 0 {
+            return total;
+        } else if remaining_moves == 1 {
             self.for_each_next_states(state, |next_state| {
                 total += next_state.next_valid.count_ones() as u64;
             });
-        } else if max_depth - depth >= 7 {
-            let mut next_states: HashMap<State, u64> = HashMap::new();
-            self.for_each_next_states(state, |next_state| {
-                *next_states
-                    .entry(next_state.minimize_by_symmetry())
-                    .or_default() += 1;
-            });
-            total += next_states
-                .into_par_iter()
-                .map(|(next_state, mul)| mul * self.recurse(next_state, depth + 1, max_depth))
-                .sum::<u64>();
         } else {
             self.for_each_next_states(state, |next_state| {
-                total += self.recurse(next_state, depth + 1, max_depth);
+                total += self.recurse_count(next_state, remaining_moves - 1);
             });
         };
 
         total
     }
 
-    pub fn count_moves(&self, max_depth: u32) -> u64 {
-        if max_depth == 0 {
-            0
+    fn recurse_all_moves(
+        &self,
+        state: State,
+        remaining_moves: u32,
+        callback_inner: &mut impl FnMut(&State),
+        callback_leaf: &mut impl FnMut(State),
+    ) {
+        if remaining_moves == 0 {
+            callback_leaf(state);
         } else {
-            self.recurse(State::initial(), 0, max_depth)
+            callback_inner(&state);
+            self.for_each_next_states(state, |next_state| {
+                self.recurse_all_moves(
+                    next_state,
+                    remaining_moves - 1,
+                    callback_inner,
+                    callback_leaf,
+                );
+            });
         }
+    }
+
+    pub fn count_moves(&self, max_depth: u32) -> u64 {
+        let half_depth = max_depth - max_depth.min(6);
+        let mut hash_map: HashMap<State, u64> = HashMap::new();
+        let mut total = 0;
+        self.recurse_all_moves(
+            State::initial(),
+            half_depth,
+            &mut |state| {
+                total += state.next_valid.count_ones() as u64;
+            },
+            &mut |state| {
+                *hash_map.entry(state.minimize_by_symmetry()).or_default() += 1;
+            },
+        );
+        total
+            + hash_map
+                .into_par_iter()
+                .map(|(state, multiplier)| {
+                    multiplier * self.recurse_count(state, max_depth - half_depth)
+                })
+                .sum::<u64>()
     }
 }
 
 fn main() {
     use std::time::Instant;
     let counter = MoveCounter::new();
-    for depth in 1..=9 {
+    for depth in 1..=10 {
         println!("depth = {}", depth);
         let instant = Instant::now();
         let result = counter.count_moves(depth);
