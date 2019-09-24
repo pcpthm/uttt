@@ -10,3 +10,4 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 once_cell = "1.2.0"
 derive_more = "0.15.0"
+rayon = "1.2.0"

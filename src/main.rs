@@ -1,5 +1,6 @@
 use derive_more::{BitAnd, BitAndAssign, BitOr, Not};
 use once_cell::sync::Lazy;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 #[derive(Debug, Clone, Copy, Default, BitAnd, BitOr, BitAndAssign, Not, PartialEq, Eq)]
 pub struct Mask81(u128);
@@ -71,26 +72,8 @@ impl MoveCounter {
         }
     }
 
-    fn recurse(&self, state: State, depth: u32) -> u64 {
-        debug_assert!(depth > 0);
-        debug_assert!((state.player_placed & state.opponent_placed) == Mask81::default());
-        debug_assert!(
-            (state.next_valid
-                & (state.player_placed | state.opponent_placed | !state.available_fields))
-                == Mask81::default()
-        );
-        debug_assert!((0..9).all(|i| {
-            let mask = (state.available_fields.0 >> (i * 9) & ((1u128 << 9) - 1)) as u16;
-            assert!(mask == 0 || mask == FIELD_ALL);
-            let meta = (state.meta_player_placed | state.meta_opponent_placed) >> i & 1;
-            let placed = ((state.player_placed | state.opponent_placed).0 >> (i * 9)
-                & ((1u128 << 9) - 1)) as u16;
-            assert_eq!(mask == 0, meta != 0 || placed == FIELD_ALL);
-            true
-        }));
-
-        let mut total = 0;
-
+    #[inline]
+    fn for_each_next_states(&self, state: State, mut callback: impl FnMut(State)) {
         let mut iter = state.next_valid.0;
         while iter != 0 {
             let pos = iter.trailing_zeros();
@@ -133,26 +116,59 @@ impl MoveCounter {
             next_valid &= !next_placed;
             next_valid &= !state.opponent_placed;
 
-            total += 1 + if game_over {
-                0
-            } else if depth == 1 {
-                next_valid.count_ones().into()
-            } else {
-                self.recurse(
-                    State {
-                        player_placed: state.opponent_placed,
-                        opponent_placed: next_placed,
-                        next_valid,
-                        available_fields: next_available_fields,
-                        meta_player_placed: state.meta_opponent_placed,
-                        meta_opponent_placed: meta_next_placed,
-                    },
-                    depth - 1,
-                )
-            };
+            if !game_over {
+                callback(State {
+                    player_placed: state.opponent_placed,
+                    opponent_placed: next_placed,
+                    next_valid,
+                    available_fields: next_available_fields,
+                    meta_player_placed: state.meta_opponent_placed,
+                    meta_opponent_placed: meta_next_placed,
+                });
+            }
 
             iter &= iter - 1;
         }
+    }
+
+    fn recurse(&self, state: State, depth: u32) -> u64 {
+        debug_assert!(depth > 0);
+        debug_assert!((state.player_placed & state.opponent_placed) == Mask81::default());
+        debug_assert!(
+            (state.next_valid
+                & (state.player_placed | state.opponent_placed | !state.available_fields))
+                == Mask81::default()
+        );
+        debug_assert!((0..9).all(|i| {
+            let mask = (state.available_fields.0 >> (i * 9) & ((1u128 << 9) - 1)) as u16;
+            assert!(mask == 0 || mask == FIELD_ALL);
+            let meta = (state.meta_player_placed | state.meta_opponent_placed) >> i & 1;
+            let placed = ((state.player_placed | state.opponent_placed).0 >> (i * 9)
+                & ((1u128 << 9) - 1)) as u16;
+            assert_eq!(mask == 0, meta != 0 || placed == FIELD_ALL);
+            true
+        }));
+
+        let mut total = state.next_valid.count_ones().into();
+        if depth >= 7 {
+            let mut next_states = Vec::new();
+            self.for_each_next_states(state, |next_state| {
+                next_states.push(next_state);
+            });
+            total += next_states
+                .into_par_iter()
+                .map(|next_state| self.recurse(next_state, depth - 1))
+                .sum::<u64>();
+        } else if depth == 1 {
+            self.for_each_next_states(state, |next_state| {
+                total += next_state.next_valid.count_ones() as u64;
+            });
+        } else {
+            self.for_each_next_states(state, |next_state| {
+                total += self.recurse(next_state, depth - 1);
+            });
+        };
+
         total
     }
 
