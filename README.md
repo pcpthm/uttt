@@ -11,6 +11,7 @@ I made that last (depth = 0) moves can be counted just by the popcount instructi
 
 ## More optimization oppotunities
 
+* Exploit symmetries. Note: the symmetry seems only 2^3 (horizontal/vertical/transpose). Permutating the meta-board should also flip all small-boards due to the field specifying rule.
 * More efficient representation than using consective 81 bits on an `u128`. For example, I used 32-bit-aligned bits for each 9x3 stack to sped up my sudoku solver <https://github.com/pcpthm/sudoku> (warning: overly optimized and not readable).
 * Faster counting of recursion leaves (depth=1), somehow.
 * Memorization
