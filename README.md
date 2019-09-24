@@ -39,3 +39,7 @@ result = 2636425377, time = 2847ms
 depth = 9
 result = 21620184705, time = 24129ms
 ```
+
+## Parallelization
+
+See <https://github.com/pcpthm/uttt/tree/parallel> for the parallelization using `rayon`. Roughly 4x improvement on my machine (4 physical cores, 8 logical cores).
