@@ -176,7 +176,27 @@ impl MoveCounter {
         if depth == 0 {
             0
         } else {
-            self.recurse(State::initial(), depth)
+            // Take account of the symmetry for the first move
+            let mut initial_states = Vec::with_capacity(9 * 3);
+            let mut index = 0;
+            self.for_each_next_states(State::initial(), |next_state| {
+                if index < 9 * 2 {
+                    initial_states.push((next_state, 4));
+                } else if 9 * 4 <= index && index < 9 * 5 {
+                    initial_states.push((next_state, 1));
+                }
+                index += 1;
+            });
+            initial_states
+                .into_par_iter()
+                .map(|(state, mul)| {
+                    mul * (1 + if depth == 1 {
+                        state.next_valid.count_ones() as u64
+                    } else {
+                        self.recurse(state, depth - 1)
+                    })
+                })
+                .sum()
         }
     }
 }
